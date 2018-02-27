@@ -248,7 +248,7 @@ int main() {
 
             int prev_size = previous_path_x.size();
 
-            // Using the data from sensor_fusion to avoid collision
+            // TODO: Using the data from sensor_fusion to avoid collision
             if(prev_size > 0)
             {
               car_s = end_path_s;
@@ -277,6 +277,14 @@ int main() {
                   // also flag to try to change lanes.
                   //ref_vel = 29.5; // mph
                   too_close = true;
+                  if(lane > 0 && lane <= 2)
+                  {
+                    lane -= 1;
+                  }else
+                  {
+                    lane +=1;
+                  }
+
                 }
               }
             }
@@ -338,7 +346,7 @@ int main() {
 
             }
 
-            // In Frenet ad evenly 30m spaced points ahead of the starting reference
+            // In Frenet add evenly 30m spaced points ahead of the starting reference
             vector<double> next_wp0 = getXY(car_s+30, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
             vector<double> next_wp1 = getXY(car_s+60, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
             vector<double> next_wp2 = getXY(car_s+90, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
@@ -380,7 +388,7 @@ int main() {
             }
 
             // Calculate how to break up spline points so that we travel at our desired reference velocity
-            double target_x = 60;
+            double target_x = 30.0;
             double target_y = s(target_x);
             double target_dist = sqrt( target_x*target_x + target_y*target_y );
 
