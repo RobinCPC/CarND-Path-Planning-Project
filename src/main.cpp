@@ -205,7 +205,7 @@ int main() {
   int lane = 1;
 
   // have a reference volecity to target
-  double ref_vel = 49.5;  //mph
+  double ref_vel = 0.;  //mph
 
   h.onMessage([&ref_vel, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
@@ -242,11 +242,55 @@ int main() {
           	double end_path_d = j[1]["end_path_d"];
 
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
+            // a 2D vector of cars state, each row represent one state of car
+            // --> [ID, x_map_coor, y_map_coor, x_vel, y_vel, s_fren, d_frent]
           	auto sensor_fusion = j[1]["sensor_fusion"];
 
             int prev_size = previous_path_x.size();
 
+            // Using the data from sensor_fusion to avoid collision
+            if(prev_size > 0)
+            {
+              car_s = end_path_s;
+            }
 
+            bool too_close = false;
+
+            // find ref_v to use
+            for (int i = 0; i < (int)sensor_fusion.size(); i++)
+            {
+              // check if car is in my lane
+              float d = sensor_fusion[i][6];
+              if( d < (2+4*lane+2) && d > (2+4*lane-2))
+              {
+                double vx = sensor_fusion[i][3];
+                double vy = sensor_fusion[i][4];
+                double check_speed = sqrt(vx*vx + vy*vy);
+                double check_car_s = sensor_fusion[i][5];
+
+                check_car_s += ( (double)prev_size * .02 * check_speed);  // if using previous points can project s value outward in time. 
+                // check s values greater than mine and s gap
+                if( (check_car_s > car_s) && ((check_car_s - car_s) < 30))
+                {
+
+                  // Do something logic here to lower reference velocity so we don't crash into the car in front of us, could 
+                  // also flag to try to change lanes.
+                  //ref_vel = 29.5; // mph
+                  too_close = true;
+                }
+              }
+            }
+
+            if(too_close)
+            {
+              ref_vel -= .224;  // slow down as acc 5 m/s^2
+            }
+            else if (ref_vel < 49.5)
+            {
+              ref_vel += .224;  // speed up as acc 5 m/s^2
+            }
+
+              
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
             // Create a list of widely spaced (x,y) waypoints, evenly spaced at 30m.
@@ -336,18 +380,20 @@ int main() {
             }
 
             // Calculate how to break up spline points so that we travel at our desired reference velocity
-            double target_x = 30;
+            double target_x = 60;
             double target_y = s(target_x);
             double target_dist = sqrt( target_x*target_x + target_y*target_y );
 
             double x_add_on = 0;
 
             // Fill up the rest of our path planner after filling it with previous points, here we will always output 50 points
-            for (int i = 1; i < 50-previous_path_x.size(); i++)
+            for (int i = 1; i < 50-(int)previous_path_x.size(); i++)
             {
+
               double N = (target_dist/(.02*ref_vel/2.24));  // 2.24 for transfer mph to meter per seconds
               double x_point = x_add_on + (target_x) / N;
               double y_point = s(x_point);
+              
 
               x_add_on = x_point;
 
