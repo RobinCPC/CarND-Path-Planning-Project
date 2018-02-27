@@ -44,7 +44,7 @@ int ClosestWaypoint(double x, double y, const vector<double> &maps_x, const vect
 	double closestLen = 100000; //large number
 	int closestWaypoint = 0;
 
-	for(int i = 0; i < maps_x.size(); i++)
+	for(int i = 0; i < (int)maps_x.size(); i++)
 	{
 		double map_x = maps_x[i];
 		double map_y = maps_y[i];
@@ -77,7 +77,7 @@ int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x,
   if(angle > pi()/4)
   {
     closestWaypoint++;
-  if (closestWaypoint == maps_x.size())
+  if (closestWaypoint == (int)maps_x.size())
   {
     closestWaypoint = 0;
   }
@@ -244,6 +244,58 @@ int main() {
 
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
+            // simple straigh line
+            double dist_inc = 0.5;
+            for(int i = 0; i < 50; ++i){
+              double next_s = car_s + (i+1) * dist_inc;
+              double next_d = 6; // stay in center lane
+              vector<double> xy = getXY(next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+              next_x_vals.push_back(xy[0]);
+              next_y_vals.push_back(xy[1]);
+              //next_x_vals.push_back(car_x + (dist_inc*i) * cos(deg2rad(car_yaw)));
+              //next_y_vals.push_back(car_y + (dist_inc*i) * sin(deg2rad(car_yaw)));
+            }
+            // move in a circle
+            /*
+            double pos_x;
+            double pos_y;
+            double angle;
+            int path_size = previous_path_x.size();
+
+            for (int i = 0; i < path_size ; i++) {
+              next_x_vals.push_back(previous_path_x[i]);
+              next_y_vals.push_back(previous_path_y[i]);
+            }
+
+            if(path_size == 0)
+            {
+              pos_x = car_x;
+              pos_y = car_y;
+              angle = deg2rad(car_yaw);
+            }
+            else
+            {
+              pos_x = previous_path_x[path_size-1];
+              pos_y = previous_path_y[path_size-1];
+
+              double pos_x2 = previous_path_x[path_size-2];
+              double pos_y2 = previous_path_y[path_size-2];
+              angle = atan2(pos_y - pos_y2, pos_x - pos_x2);
+
+            }
+            
+            double dist_inc = 0.5;
+            for(int i = 0; i < 50-path_size; i++)
+            {
+              next_x_vals.push_back(pos_x + (dist_inc)*cos(angle+(i+1) * (pi()/100)));
+              next_y_vals.push_back(pos_y + (dist_inc)*sin(angle+(i+1) * (pi()/100)));
+              pos_x += (dist_inc)*cos(angle + (i+1)*(pi()/100));
+              pos_y += (dist_inc)*sin(angle + (i+1)*(pi()/100));
+            }
+            */
+
+
           	msgJson["next_x"] = next_x_vals;
           	msgJson["next_y"] = next_y_vals;
 
