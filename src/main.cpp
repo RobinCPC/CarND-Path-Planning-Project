@@ -5,10 +5,13 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <cstdlib>
+#include <algorithm>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "spline.h"
+#include "vehicle.h"
 
 using namespace std;
 
@@ -247,6 +250,20 @@ int main() {
           	auto sensor_fusion = j[1]["sensor_fusion"];
 
             int prev_size = previous_path_x.size();
+            // record my own car
+            Vehicle ego(211, car_x, car_y, car_s, car_d, car_speed);
+            double max_s = 6945.554;
+            static double keep_duration = 0.01;
+            static int ego_lane_pre = 1;
+            if (ego_lane_pre == ego.lane)
+            {
+              keep_duration += 0.02;
+            }
+            else
+            {
+              ego_lane_pre = ego.lane;
+              keep_duration = 0.01;
+            }
 
             // TODO: Using the data from sensor_fusion to avoid collision
             if(prev_size > 0)
@@ -255,43 +272,211 @@ int main() {
             }
 
             bool too_close = false;
+            vector<vector<Vehicle>> vec_lane {};
+            // only three lanes in this simulation
+            for(int i=0; i<3; ++i)
+              vec_lane.push_back(vector<Vehicle> {});
+            std::system("clear");
+            cout << "total lane: " << vec_lane.size() << endl;
 
-            // find ref_v to use
+            // find out the location of all nearby car
             for (int i = 0; i < (int)sensor_fusion.size(); i++)
             {
-              // check if car is in my lane
-              float d = sensor_fusion[i][6];
-              if( d < (2+4*lane+2) && d > (2+4*lane-2))
+              // record nearby cars
+              int n_id = sensor_fusion[i][0];
+              double nx = sensor_fusion[i][1];
+              double ny = sensor_fusion[i][2];
+              double nvx = sensor_fusion[i][3];
+              double nvy = sensor_fusion[i][4];
+              double ns = sensor_fusion[i][5];
+              double nd = sensor_fusion[i][6];
+
+              // get combination of vx and vy
+              double total_speed = sqrt(nvx*nvx + nvy*nvy);
+              // get current frenet s coord. (have latency)
+              double cur_s = ns; //+ ( (double)prev_size * .02 * total_speed);
+              Vehicle nearCar(n_id, nx, ny, cur_s, nd, total_speed);
+
+              // record nearCar in vec_lane
+              vec_lane[nearCar.lane].push_back(nearCar);
+
+            }
+
+            // check all posible next states
+            cout << "All possible next states are: \n";
+            vector<State> pos_next_states = ego.successor_states();
+            vector<double> costs;
+            double cost;
+            for(auto s : pos_next_states)
+            {
+              switch (s) 
               {
-                double vx = sensor_fusion[i][3];
-                double vy = sensor_fusion[i][4];
-                double check_speed = sqrt(vx*vx + vy*vy);
-                double check_car_s = sensor_fusion[i][5];
-
-                check_car_s += ( (double)prev_size * .02 * check_speed);  // if using previous points can project s value outward in time. 
-                // check s values greater than mine and s gap
-                if( (check_car_s > car_s) && ((check_car_s - car_s) < 30))
-                {
-
-                  // Do something logic here to lower reference velocity so we don't crash into the car in front of us, could 
-                  // also flag to try to change lanes.
-                  //ref_vel = 29.5; // mph
-                  too_close = true;
-                  if(lane > 0 && lane <= 2)
+                case State::KL:
                   {
-                    lane -= 1;
-                  }else
-                  {
-                    lane +=1;
+                    cout << "Keep Lane\n";
+                    double front_car_dist = 9999.0;
+                    double back_car_dist = 9999.0;
+                    if(vec_lane[ego.lane].size() == 0) // no car at front
+                    {
+                      cost = 0;
+                    }else
+                    {
+                      // find most close car
+                      for(auto car : vec_lane[ego.lane])
+                      { 
+                        double dist = car.s - ego.s;
+                        if( dist >=0 && dist < front_car_dist)
+                        {
+                          front_car_dist = dist;
+                        }else if( dist < 0 && fabs(dist) < back_car_dist)
+                        {
+                          back_car_dist = fabs(dist);
+                        }
+
+                      }
+                      ego.front_dist = front_car_dist;
+                      cost = (60 / front_car_dist);
+
+                    }
+                    cout << "cost: " << cost << endl;
+                    costs.push_back(cost);
                   }
+                  break;
+                case State::LCL:
+                  {
+                    cout << "Lane Change Left\n";
+                    double front_car_dist = 9999.0;
+                    double back_car_dist = 9999.0;
+                    int ln = ego.lane -1;
+                    if(vec_lane[ln].size() == 0) // no car at front
+                    {
+                      cost = 0;
+                    }else
+                    {
+                      // find most close car
+                      for(auto car : vec_lane[ln])
+                      { 
+                        double dist = car.s - ego.s;
+                        if( dist >=0 && dist < front_car_dist)
+                        {
+                          front_car_dist = dist;
+                        }else if( dist < 0 && fabs(dist) < back_car_dist)
+                        {
+                          back_car_dist = fabs(dist);
+                        }
 
-                }
+                      }
+                      ego.left_front_dist = front_car_dist;
+                      cost = (30 / front_car_dist) + (30 / back_car_dist);
+                      // panelty to change lane quickly
+                      //if(keep_duration <= 1.)
+                      cost += (1.5 / keep_duration);
+
+                    }
+                    cout << "cost: " << cost << endl;
+                    costs.push_back(cost);
+                  }
+                  break;
+                case State::LCR:
+                  {
+                    cout << "Lane Change Right\n";
+                    double front_car_dist = 9999.0;
+                    double back_car_dist = 9999.0;
+                    int ln = ego.lane + 1;
+                    if(vec_lane[ln].size() == 0) // no car at front
+                    {
+                      cost = 0;
+                    }else
+                    {
+                      // find most close car
+                      for(auto car : vec_lane[ln])
+                      { 
+                        double dist = car.s - ego.s;
+                        if( dist >=0 && dist < front_car_dist)
+                        {
+                          front_car_dist = dist;
+                        }else if( dist < 0 && fabs(dist) < back_car_dist)
+                        {
+                          back_car_dist = fabs(dist);
+                        }
+
+                      }
+                      ego.right_front_dist = front_car_dist;
+                      cost = (30 / front_car_dist) + (30 / back_car_dist);
+                      // panelty to change lane quickly
+                      //if(keep_duration <= 1.)
+                      cost += (1.5 / keep_duration);
+
+                    }
+                    cout << "cost: " << cost << endl;
+                    costs.push_back(cost);
+                  }
+                  break;
+                default:
+                  cout <<  "Unknown" << ' ';
               }
+            }
+
+            // Find the minimum cost state.
+            vector<double>::iterator best_cost = std::min_element(begin(costs),
+                                                                  end(costs));
+            int best_idx = std::distance(begin(costs), best_cost);
+
+            switch(pos_next_states[best_idx])
+            {
+              case State::KL:
+                {
+                  if(ego.front_dist < 30)
+                    too_close = true;
+                  ego.state = State::KL;
+
+                  lane = ego.lane;
+                }
+                break;
+              case State::LCL:
+                {
+                  if(ego.left_front_dist < 30)
+                    too_close = true;
+                  ego.state = State::LCL;
+                  ego.lane = ego.lane - 1;
+
+                  lane = ego.lane;
+                }
+                break;
+              case State::LCR:
+                {
+                  if(ego.right_front_dist < 30)
+                    too_close = true;
+                  ego.state = State::LCR;
+                  ego.lane = ego.lane + 1;
+
+                  lane = ego.lane;
+                }
+                break;
+              default:
+                break;
+            }
+
+            // print out all the nearby car
+            cout << "Goal distance: " << max_s << "\tCurrent distance: " 
+              << ego.s << endl;
+            cout << "Duration of Keep Lane: " << keep_duration << " seconds\n";
+
+            for(int i=0; i < (int)vec_lane.size(); ++i)
+            {
+              cout << "Nearby car in Lane " << i << " are \n";
+              for(int j=0; j < (int)vec_lane[i].size(); ++j)
+              {
+                cout << vec_lane[i][j].id << " at s = " 
+                  << vec_lane[i][j].s - ego.s
+                  << " with speed = " << vec_lane[i][j].v  << endl;
+              }
+              cout << endl;
             }
 
             if(too_close)
             {
-              ref_vel -= .224;  // slow down as acc 5 m/s^2
+              ref_vel -= .224*1.5;  // slow down as acc 5 m/s^2
             }
             else if (ref_vel < 49.5)
             {
